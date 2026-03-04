@@ -1,0 +1,63 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37012.4 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Meridian.Common", "src\Meridian.Common\Meridian.Common.csproj", "{5ED77A8F-5B0E-4692-911A-B599C4FAF8DD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Meridian.MarketData", "src\Meridian.MarketData\Meridian.MarketData.csproj", "{A1B2C3D4-1111-2222-3333-444455556666}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Meridian.Pricing", "src\Meridian.Pricing\Meridian.Pricing.csproj", "{B2C3D4E5-2222-3333-4444-555566667777}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Meridian.Risk", "src\Meridian.Risk\Meridian.Risk.csproj", "{D4E5F6A7-4444-5555-6666-777788889999}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Meridian.Pricing.Tests", "tests\Meridian.Pricing.Tests\Meridian.Pricing.Tests.csproj", "{C3D4E5F6-3333-4444-5555-666677778888}"
+EndProject
+
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{10000000-0000-0000-0000-000000000001}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{10000000-0000-0000-0000-000000000002}"
+EndProject
+
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5ED77A8F-5B0E-4692-911A-B599C4FAF8DD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5ED77A8F-5B0E-4692-911A-B599C4FAF8DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5ED77A8F-5B0E-4692-911A-B599C4FAF8DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5ED77A8F-5B0E-4692-911A-B599C4FAF8DD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455556666}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455556666}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455556666}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1111-2222-3333-444455556666}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2C3D4E5-2222-3333-4444-555566667777}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2C3D4E5-2222-3333-4444-555566667777}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2C3D4E5-2222-3333-4444-555566667777}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2C3D4E5-2222-3333-4444-555566667777}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3D4E5F6-3333-4444-5555-666677778888}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3D4E5F6-3333-4444-5555-666677778888}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3D4E5F6-3333-4444-5555-666677778888}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3D4E5F6-3333-4444-5555-666677778888}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D4E5F6A7-4444-5555-6666-777788889999}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D4E5F6A7-4444-5555-6666-777788889999}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D4E5F6A7-4444-5555-6666-777788889999}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D4E5F6A7-4444-5555-6666-777788889999}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{5ED77A8F-5B0E-4692-911A-B599C4FAF8DD} = {10000000-0000-0000-0000-000000000001}
+		{A1B2C3D4-1111-2222-3333-444455556666} = {10000000-0000-0000-0000-000000000001}
+		{B2C3D4E5-2222-3333-4444-555566667777} = {10000000-0000-0000-0000-000000000001}
+		{D4E5F6A7-4444-5555-6666-777788889999} = {10000000-0000-0000-0000-000000000001}
+		{C3D4E5F6-3333-4444-5555-666677778888} = {10000000-0000-0000-0000-000000000002}
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F704010C-3F33-46A5-B9AB-9858F38E4700}
+	EndGlobalSection
+EndGlobal

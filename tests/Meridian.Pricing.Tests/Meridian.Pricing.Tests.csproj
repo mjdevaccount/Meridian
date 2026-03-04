@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit" Version="2.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.*" />
+    <PackageReference Include="Microsoft.Reactive.Testing" Version="6.*" />
+    <PackageReference Include="System.Reactive" Version="6.*" />
+    <PackageReference Include="Moq" Version="4.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Meridian.Common\Meridian.Common.csproj" />
+    <ProjectReference Include="..\..\src\Meridian.Pricing\Meridian.Pricing.csproj" />
+    <ProjectReference Include="..\..\src\Meridian.MarketData\Meridian.MarketData.csproj" />
+  </ItemGroup>
+</Project>
