@@ -1,0 +1,104 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Pricing Latency (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "lineWidth": 2 } },
+        "overrides": []
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(meridian_pricing_latency_ms_bucket[1m]))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, rate(meridian_pricing_latency_ms_bucket[1m]))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, rate(meridian_pricing_latency_ms_bucket[1m]))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "title": "Portfolio PnL",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "unit": "currencyUSD", "custom": { "lineWidth": 2 } },
+        "overrides": []
+      },
+      "targets": [
+        { "expr": "meridian_portfolio_pnl", "legendFormat": "Pricing PnL" },
+        { "expr": "meridian_risk_portfolio_pnl", "legendFormat": "Risk PnL" }
+      ]
+    },
+    {
+      "title": "Portfolio Delta",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2 } },
+        "overrides": []
+      },
+      "targets": [
+        { "expr": "meridian_portfolio_delta", "legendFormat": "Pricing Delta" },
+        { "expr": "meridian_risk_portfolio_delta", "legendFormat": "Risk Delta" }
+      ]
+    },
+    {
+      "title": "Tick Throughput",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "lineWidth": 2 } },
+        "overrides": []
+      },
+      "targets": [
+        { "expr": "meridian_tick_rate", "legendFormat": "Ticks/sec" },
+        { "expr": "rate(meridian_ticks_published_total[1m])", "legendFormat": "Published/sec ({{symbol}})" }
+      ]
+    },
+    {
+      "title": "Snapshots Produced",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "meridian_snapshots_total", "legendFormat": "Total" }
+      ]
+    },
+    {
+      "title": "Risk Alerts",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "meridian_risk_alerts_total", "legendFormat": "{{severity}}" }
+      ]
+    },
+    {
+      "title": "PnL Snapshots to SQL",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "meridian_pnl_snapshots_sql_total", "legendFormat": "SQL Writes" }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["meridian", "latency", "risk"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Meridian - Latency & Risk",
+  "uid": "meridian-latency",
+  "version": 1
+}

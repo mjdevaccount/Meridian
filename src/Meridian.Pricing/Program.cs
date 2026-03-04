@@ -1,11 +1,14 @@
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using Meridian.Common.Configuration;
+using Meridian.Common.Health;
 using Meridian.Common.Models;
 using Meridian.MarketData.Simulation;
 using Meridian.Pricing.Models;
 using Meridian.Pricing.Streams;
 using Microsoft.Extensions.Configuration;
+using Prometheus;
+using Serilog;
 
 namespace Meridian.Pricing;
 
@@ -15,11 +18,45 @@ namespace Meridian.Pricing;
 /// </summary>
 public class Program
 {
+    // Prometheus metrics
+    private static readonly Histogram PricingLatency = Metrics.CreateHistogram(
+        "meridian_pricing_latency_ms", "Tick-to-price latency in milliseconds",
+        new HistogramConfiguration
+        {
+            Buckets = new double[] { 1, 5, 10, 25, 50, 100, 250, 500 }
+        });
+    private static readonly Gauge PortfolioPnl = Metrics.CreateGauge(
+        "meridian_portfolio_pnl", "Current portfolio PnL");
+    private static readonly Gauge PortfolioDelta = Metrics.CreateGauge(
+        "meridian_portfolio_delta", "Current portfolio delta");
+    private static readonly Counter SnapshotsTotal = Metrics.CreateCounter(
+        "meridian_snapshots_total", "Total portfolio snapshots produced");
+
     public static async Task Main(string[] args)
     {
+        Log.Logger = new LoggerConfiguration()
+            .Enrich.WithProperty("Service", "Meridian.Pricing")
+            .WriteTo.Console()
+            .WriteTo.Seq(Environment.GetEnvironmentVariable("SEQ_URL") ?? "http://localhost:5341")
+            .CreateLogger();
+
+        Log.Information("Meridian Pricing Engine - Phase 2 starting");
+
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Console.WriteLine("=== Meridian Pricing Engine - Phase 2 ===");
         Console.WriteLine();
+
+        // Start Prometheus metrics server on port 9101
+        var metricServer = new MetricServer(port: 9101);
+        try
+        {
+            metricServer.Start();
+            Log.Information("Prometheus metrics server started on port {Port}", 9101);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to start Prometheus metrics server on port {Port}", 9101);
+        }
 
         // -----------------------------------------------------------------
         // Load configuration
@@ -48,6 +85,7 @@ public class Program
         if (!string.IsNullOrEmpty(kafkaBootstrap) && kafkaBootstrap != "localhost:9092")
         {
             // Kafka mode: consume from Kafka topics
+            Log.Information("Using Kafka data source at {KafkaBootstrap}", kafkaBootstrap);
             Console.WriteLine($"Using Kafka at {kafkaBootstrap}");
             var ticksTopic = configuration.GetValue<string>("Kafka:TicksTopic") ?? "market.ticks";
             var volSurfaceTopic = configuration.GetValue<string>("Kafka:VolSurfaceTopic") ?? "market.volsurface";
@@ -63,6 +101,7 @@ public class Program
         else
         {
             // In-process simulator mode
+            Log.Information("Using in-process simulator data source");
             Console.WriteLine("Using in-process simulator");
 
             var gbmSimulators = new Dictionary<string, GeometricBrownianMotion>();
@@ -97,6 +136,7 @@ public class Program
             allVolUpdates = volStreams.Merge();
         }
 
+        Log.Information("Risk-free rate: {RiskFreeRate}, Micro-batch interval: {MicroBatchMs}ms", riskFreeRate, microBatchMs);
         Console.WriteLine($"Risk-free rate: {riskFreeRate:P2} | Micro-batch: {microBatchMs}ms");
         Console.WriteLine();
 
@@ -145,9 +185,16 @@ public class Program
                 snapshot =>
                 {
                     Interlocked.Increment(ref snapshotCount);
+                    SnapshotsTotal.Inc();
+                    PortfolioPnl.Set((double)snapshot.TotalUnrealizedPnl);
+                    PortfolioDelta.Set((double)snapshot.AggregateGreeks.Delta);
                     PrintPortfolioSummary(snapshot);
                 },
-                ex => PrintError($"Pipeline error: {ex.Message}"),
+                ex =>
+                {
+                    Log.Error(ex, "Pipeline error");
+                    PrintError($"Pipeline error: {ex.Message}");
+                },
                 () => Console.WriteLine("Pipeline completed."));
         subscriptions.Add(portfolioSub);
 
@@ -158,7 +205,11 @@ public class Program
             .Throttle(TimeSpan.FromSeconds(2))
             .Subscribe(
                 snapshot => PrintPositionDetail(snapshot),
-                ex => PrintError($"Detail stream error: {ex.Message}"));
+                ex =>
+                {
+                    Log.Error(ex, "Detail stream error");
+                    PrintError($"Detail stream error: {ex.Message}");
+                });
         subscriptions.Add(detailSub);
 
         // -----------------------------------------------------------------
@@ -174,7 +225,11 @@ public class Program
                                       $"Vega={gs.Vega,8:F2}  Theta={gs.Theta,8:F2}  Rho={gs.Rho,8:F2}");
                     Console.ResetColor();
                 },
-                ex => PrintError($"Greeks stream error: {ex.Message}"));
+                ex =>
+                {
+                    Log.Error(ex, "Greeks stream error");
+                    PrintError($"Greeks stream error: {ex.Message}");
+                });
         subscriptions.Add(greeksSub);
 
         // -----------------------------------------------------------------
@@ -185,6 +240,8 @@ public class Program
             {
                 var stats = pipeline.GetLatencyStats();
                 var count = Interlocked.Read(ref snapshotCount);
+                // Record latency percentiles in Prometheus histogram
+                PricingLatency.Observe(stats.P50);
                 Console.ForegroundColor = ConsoleColor.DarkYellow;
                 Console.WriteLine($"  [Latency] p50={stats.P50:F1}ms  p95={stats.P95:F1}ms  " +
                                   $"p99={stats.P99:F1}ms  min={stats.Min:F1}ms  max={stats.Max:F1}ms  " +
@@ -196,6 +253,31 @@ public class Program
         // -----------------------------------------------------------------
         // Wait for Ctrl+C
         // -----------------------------------------------------------------
+        // Start health check server on port 8091
+        HealthCheckServer? healthServer = null;
+        try
+        {
+            healthServer = new HealthCheckServer(8091, async () =>
+            {
+                var checks = new Dictionary<string, object>
+                {
+                    ["service"] = "Meridian.Pricing",
+                    ["status"] = "healthy",
+                    ["pipeline"] = "running",
+                    ["snapshots"] = Interlocked.Read(ref snapshotCount),
+                    ["timestamp"] = DateTime.UtcNow.ToString("o")
+                };
+                return await Task.FromResult(checks);
+            });
+            healthServer.Start();
+            Log.Information("Health check server started on port {Port}", 8091);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to start health check server on port {Port}", 8091);
+        }
+
+        Log.Information("Pricing pipeline started with {PositionCount} positions", positions.Count);
         Console.WriteLine("Pipeline running. Press Ctrl+C to stop.");
         Console.WriteLine();
 
@@ -223,7 +305,13 @@ public class Program
         subscriptions.Dispose();
         pipeline.Dispose();
         dataSource?.Dispose();
+        healthServer?.Dispose();
 
+        try { metricServer.Stop(); }
+        catch (Exception ex) { Log.Warning(ex, "Error stopping Prometheus metrics server"); }
+
+        Log.Information("Pricing engine stopped");
+        Log.CloseAndFlush();
         Console.WriteLine();
         Console.WriteLine("=== Meridian Pricing Engine stopped. ===");
     }

@@ -26,3 +26,9 @@ packages/
 
 ## Build
 TestResults/
+
+## Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/

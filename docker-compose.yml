@@ -75,6 +75,27 @@ services:
       - "5341:5341"
       - "8081:80"
 
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+
   marketdata:
     build:
       context: .
@@ -82,8 +103,12 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    ports:
+      - "9100:9100"
+      - "8090:8090"
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
+      SEQ_URL: http://seq:5341
 
   pricing:
     build:
@@ -94,8 +119,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    ports:
+      - "9101:9101"
+      - "8091:8091"
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
+      SEQ_URL: http://seq:5341
 
   risk:
     build:
@@ -108,7 +137,23 @@ services:
         condition: service_healthy
       sql-init:
         condition: service_completed_successfully
+    ports:
+      - "9102:9102"
+      - "8092:8092"
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
       REDIS_CONNECTION: redis:6379
       SQL_CONNECTION: "Server=sqlserver,1433;Database=Meridian;User Id=sa;Password=Meridian_Dev_123!;TrustServerCertificate=true"
+      SEQ_URL: http://seq:5341
+
+  scenarios:
+    build:
+      context: .
+      dockerfile: src/Meridian.Scenarios/Dockerfile
+    depends_on:
+      sql-init:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    environment:
+      SQL_CONNECTION: "Driver={ODBC Driver 18 for SQL Server};Server=sqlserver,1433;Database=Meridian;Uid=sa;Pwd=Meridian_Dev_123!;TrustServerCertificate=yes"

@@ -1,18 +1,50 @@
 using System.Reactive.Linq;
 using Microsoft.Extensions.Configuration;
 using Meridian.Common.Configuration;
+using Meridian.Common.Health;
 using Meridian.MarketData.Publishing;
 using Meridian.MarketData.Simulation;
+using Prometheus;
+using Serilog;
 
 namespace Meridian.MarketData;
 
 public class Program
 {
+    // Prometheus metrics
+    private static readonly Counter TicksPublished = Metrics.CreateCounter(
+        "meridian_ticks_published_total", "Total ticks published", new CounterConfiguration
+        {
+            LabelNames = new[] { "symbol" }
+        });
+    private static readonly Gauge TickRate = Metrics.CreateGauge(
+        "meridian_tick_rate", "Current ticks per second");
+
     public static async Task Main(string[] args)
     {
+        Log.Logger = new LoggerConfiguration()
+            .Enrich.WithProperty("Service", "Meridian.MarketData")
+            .WriteTo.Console()
+            .WriteTo.Seq(Environment.GetEnvironmentVariable("SEQ_URL") ?? "http://localhost:5341")
+            .CreateLogger();
+
+        Log.Information("Meridian Market Data Simulator - Phase 2 starting");
+
         Console.WriteLine("Meridian Market Data Simulator - Phase 2");
         Console.WriteLine("========================================");
         Console.WriteLine();
+
+        // Start Prometheus metrics server on port 9100
+        var metricServer = new MetricServer(port: 9100);
+        try
+        {
+            metricServer.Start();
+            Log.Information("Prometheus metrics server started on port {Port}", 9100);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to start Prometheus metrics server on port {Port}", 9100);
+        }
 
         // Load configuration
         var configuration = new ConfigurationBuilder()
@@ -23,6 +55,9 @@ public class Program
         var config = new MarketDataConfig();
         configuration.GetSection("MarketData").Bind(config);
 
+        Log.Information("Configured symbols: {Symbols}", string.Join(", ", config.Symbols.Select(s => s.Symbol)));
+        Log.Information("Ticks per second: {TicksPerSecond}, Vol surface updates per second: {VolSurfaceUpdatesPerSecond}",
+            config.TicksPerSecond, config.VolSurfaceUpdatesPerSecond);
         Console.WriteLine($"Configured symbols: {string.Join(", ", config.Symbols.Select(s => s.Symbol))}");
         Console.WriteLine($"Ticks per second: {config.TicksPerSecond}");
         Console.WriteLine($"Vol surface updates per second: {config.VolSurfaceUpdatesPerSecond}");
@@ -51,6 +86,8 @@ public class Program
             if (!string.IsNullOrEmpty(kafkaBootstrap))
             {
                 kafkaPublisher = new KafkaTickPublisher(kafkaBootstrap, ticksTopic, volSurfaceTopic);
+                Log.Information("Kafka publisher connected: {KafkaBootstrap}", kafkaBootstrap);
+                Log.Information("Kafka ticks topic: {TicksTopic}, vol surface topic: {VolSurfaceTopic}", ticksTopic, volSurfaceTopic);
                 Console.WriteLine($"Kafka publisher connected: {kafkaBootstrap}");
                 Console.WriteLine($"  Ticks topic: {ticksTopic}");
                 Console.WriteLine($"  Vol surface topic: {volSurfaceTopic}");
@@ -59,6 +96,7 @@ public class Program
         }
         catch (Exception ex)
         {
+            Log.Warning(ex, "Kafka publisher failed to initialize");
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.WriteLine($"WARNING: Kafka publisher failed to initialize: {ex.Message}");
             Console.WriteLine("Continuing with console-only output.");
@@ -66,6 +104,39 @@ public class Program
             Console.WriteLine();
             kafkaPublisher = null;
         }
+
+        // Start health check server on port 8090
+        HealthCheckServer? healthServer = null;
+        try
+        {
+            healthServer = new HealthCheckServer(8090, async () =>
+            {
+                var checks = new Dictionary<string, object>
+                {
+                    ["service"] = "Meridian.MarketData",
+                    ["status"] = "healthy",
+                    ["kafka"] = kafkaPublisher != null ? "connected" : "not configured",
+                    ["timestamp"] = DateTime.UtcNow.ToString("o")
+                };
+                return await Task.FromResult(checks);
+            });
+            healthServer.Start();
+            Log.Information("Health check server started on port {Port}", 8090);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to start health check server on port {Port}", 8090);
+        }
+
+        // Tick rate tracking
+        var tickCount = 0L;
+        var tickRateTimer = new System.Timers.Timer(1000);
+        tickRateTimer.Elapsed += (_, _) =>
+        {
+            var count = Interlocked.Exchange(ref tickCount, 0);
+            TickRate.Set(count);
+        };
+        tickRateTimer.Start();
 
         // Set up cancellation on Ctrl+C
         using var cts = new CancellationTokenSource();
@@ -75,6 +146,7 @@ public class Program
             cts.Cancel();
             Console.ResetColor();
             Console.WriteLine();
+            Log.Information("Shutdown requested");
             Console.WriteLine("Shutting down...");
         };
 
@@ -87,8 +159,13 @@ public class Program
                 .Subscribe(tick =>
                 {
                     if (cts.Token.IsCancellationRequested) return;
-                    try { publisher.PublishTick(tick); }
-                    catch (Exception ex) { Console.Error.WriteLine($"Kafka tick publish error: {ex.Message}"); }
+                    Interlocked.Increment(ref tickCount);
+                    try
+                    {
+                        publisher.PublishTick(tick);
+                        TicksPublished.WithLabels(tick.Symbol).Inc();
+                    }
+                    catch (Exception ex) { Log.Error(ex, "Kafka tick publish error for {Symbol}", tick.Symbol); }
                 });
         }
 
@@ -134,7 +211,7 @@ public class Program
                 {
                     if (cts.Token.IsCancellationRequested) return;
                     try { publisher.PublishVolSurface(update); }
-                    catch (Exception ex) { Console.Error.WriteLine($"Kafka vol surface publish error: {ex.Message}"); }
+                    catch (Exception ex) { Log.Error(ex, "Kafka vol surface publish error for {Symbol}", update.Symbol); }
                 });
         }
 
@@ -167,7 +244,15 @@ public class Program
         tickSubscription.Dispose();
         volSubscription.Dispose();
         kafkaPublisher?.Dispose();
+        tickRateTimer.Stop();
+        tickRateTimer.Dispose();
+        healthServer?.Dispose();
 
+        try { metricServer.Stop(); }
+        catch (Exception ex) { Log.Warning(ex, "Error stopping Prometheus metrics server"); }
+
+        Log.Information("Simulator stopped");
+        Log.CloseAndFlush();
         Console.WriteLine("Simulator stopped.");
     }
 }

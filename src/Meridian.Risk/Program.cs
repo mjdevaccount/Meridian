@@ -2,21 +2,57 @@ using System.Reactive.Linq;
 using System.Text.Json;
 using Confluent.Kafka;
 using Meridian.Common.Configuration;
+using Meridian.Common.Health;
 using Meridian.Common.Models;
 using Meridian.Pricing.Models;
 using Meridian.Pricing.Streams;
 using Meridian.Risk.Aggregation;
 using Meridian.Risk.State;
 using Microsoft.Extensions.Configuration;
+using Prometheus;
+using Serilog;
 
 namespace Meridian.Risk;
 
 public class Program
 {
+    // Prometheus metrics
+    private static readonly Counter RiskAlertsTotal = Metrics.CreateCounter(
+        "meridian_risk_alerts_total", "Total risk alerts fired", new CounterConfiguration
+        {
+            LabelNames = new[] { "severity" }
+        });
+    private static readonly Gauge RiskPortfolioPnl = Metrics.CreateGauge(
+        "meridian_risk_portfolio_pnl", "Current PnL from risk perspective");
+    private static readonly Gauge RiskPortfolioDelta = Metrics.CreateGauge(
+        "meridian_risk_portfolio_delta", "Portfolio delta from risk perspective");
+    private static readonly Counter PnlSnapshotsSqlTotal = Metrics.CreateCounter(
+        "meridian_pnl_snapshots_sql_total", "PnL snapshots written to SQL");
+
     public static async Task Main(string[] args)
     {
+        Log.Logger = new LoggerConfiguration()
+            .Enrich.WithProperty("Service", "Meridian.Risk")
+            .WriteTo.Console()
+            .WriteTo.Seq(Environment.GetEnvironmentVariable("SEQ_URL") ?? "http://localhost:5341")
+            .CreateLogger();
+
+        Log.Information("Meridian Risk Service - Phase 2 starting");
+
         Console.WriteLine("Meridian Risk Service - Phase 2");
         Console.WriteLine("===============================");
+
+        // Start Prometheus metrics server on port 9102
+        var metricServer = new MetricServer(port: 9102);
+        try
+        {
+            metricServer.Start();
+            Log.Information("Prometheus metrics server started on port {Port}", 9102);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to start Prometheus metrics server on port {Port}", 9102);
+        }
 
         var configuration = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
@@ -34,6 +70,8 @@ public class Program
         var sqlConnection = Environment.GetEnvironmentVariable("SQL_CONNECTION")
             ?? configuration.GetValue<string>("SqlServer:ConnectionString") ?? "";
 
+        Log.Information("Configuration: Kafka={KafkaBootstrap}, Redis={RedisConnection}, SQL={SqlEnabled}",
+            kafkaBootstrap, redisConnection, string.IsNullOrEmpty(sqlConnection) ? "disabled" : "enabled");
         Console.WriteLine($"Kafka: {kafkaBootstrap}");
         Console.WriteLine($"Redis: {redisConnection}");
         Console.WriteLine($"SQL: {(string.IsNullOrEmpty(sqlConnection) ? "disabled" : "enabled")}");
@@ -45,10 +83,12 @@ public class Program
         try
         {
             redis = new RedisStateStore(redisConnection);
+            Log.Information("Redis connected at {RedisConnection}", redisConnection);
             Console.WriteLine("Redis connected.");
         }
         catch (Exception ex)
         {
+            Log.Warning(ex, "Redis unavailable at {RedisConnection}", redisConnection);
             Console.WriteLine($"Redis unavailable: {ex.Message}. Continuing without Redis.");
         }
 
@@ -58,11 +98,13 @@ public class Program
             {
                 sql = new SqlPositionRepository(sqlConnection);
                 await sql.InitializeSchemaAsync();
+                Log.Information("SQL Server connected. Schema initialized");
                 Console.WriteLine("SQL Server connected. Schema initialized.");
             }
         }
         catch (Exception ex)
         {
+            Log.Warning(ex, "SQL Server unavailable");
             Console.WriteLine($"SQL Server unavailable: {ex.Message}. Continuing without SQL.");
         }
 
@@ -140,7 +182,15 @@ public class Program
                 if (sql == null) return;
                 foreach (var pnl in pnlUpdates)
                 {
-                    try { await sql.SavePnlSnapshotAsync(pnl); } catch { }
+                    try
+                    {
+                        await sql.SavePnlSnapshotAsync(pnl);
+                        PnlSnapshotsSqlTotal.Inc();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "Failed to save PnL snapshot to SQL for {PositionId}", pnl.PositionId);
+                    }
                 }
             });
 
@@ -148,12 +198,20 @@ public class Program
         var alertSub = thresholdMonitor.MonitorThresholds(portfolioStream)
             .Subscribe(async alert =>
             {
+                RiskAlertsTotal.WithLabels(alert.Severity.ToString()).Inc();
+
+                if (alert.Severity == AlertSeverity.Critical)
+                    Log.Warning("Risk alert [{Severity}] {AlertType}: {Description}", alert.Severity, alert.Type, alert.Description);
+                else
+                    Log.Information("Risk alert [{Severity}] {AlertType}: {Description}", alert.Severity, alert.Type, alert.Description);
+
                 var color = alert.Severity == AlertSeverity.Critical ? ConsoleColor.Red : ConsoleColor.Yellow;
                 Console.ForegroundColor = color;
                 Console.WriteLine($"[ALERT] [{alert.Severity}] {alert.Type}: {alert.Description}");
                 Console.ResetColor();
 
-                try { if (sql != null) await sql.SaveRiskAlertAsync(alert); } catch { }
+                try { if (sql != null) await sql.SaveRiskAlertAsync(alert); }
+                catch (Exception ex) { Log.Error(ex, "Failed to save risk alert to SQL"); }
             });
 
         // Subscribe to risk metrics for console output
@@ -161,6 +219,9 @@ public class Program
             .Sample(TimeSpan.FromSeconds(3))
             .Subscribe(metrics =>
             {
+                RiskPortfolioPnl.Set((double)metrics.TotalPnl);
+                RiskPortfolioDelta.Set((double)metrics.AggregateGreeks.Delta);
+
                 Console.ForegroundColor = ConsoleColor.Cyan;
                 Console.WriteLine($"[RISK] Positions={metrics.PositionCount} " +
                     $"PnL={metrics.TotalPnl:F2} " +
@@ -170,6 +231,32 @@ public class Program
                 Console.ResetColor();
             });
 
+        // Start health check server on port 8092
+        HealthCheckServer? healthServer = null;
+        try
+        {
+            healthServer = new HealthCheckServer(8092, async () =>
+            {
+                var checks = new Dictionary<string, object>
+                {
+                    ["service"] = "Meridian.Risk",
+                    ["status"] = "healthy",
+                    ["kafka"] = kafkaBootstrap,
+                    ["redis"] = redis != null ? "connected" : "unavailable",
+                    ["sql"] = sql != null ? "connected" : "unavailable",
+                    ["timestamp"] = DateTime.UtcNow.ToString("o")
+                };
+                return await Task.FromResult(checks);
+            });
+            healthServer.Start();
+            Log.Information("Health check server started on port {Port}", 8092);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to start health check server on port {Port}", 8092);
+        }
+
+        Log.Information("Risk service running. Waiting for market data");
         Console.WriteLine();
         Console.WriteLine("Risk service running. Waiting for market data...");
         Console.WriteLine("Press Ctrl+C to stop.");
@@ -189,7 +276,13 @@ public class Program
         pipeline.Dispose();
         redis?.Dispose();
         sql?.Dispose();
+        healthServer?.Dispose();
 
+        try { metricServer.Stop(); }
+        catch (Exception ex) { Log.Warning(ex, "Error stopping Prometheus metrics server"); }
+
+        Log.Information("Risk service stopped");
+        Log.CloseAndFlush();
         Console.WriteLine("Risk service stopped.");
     }
 
