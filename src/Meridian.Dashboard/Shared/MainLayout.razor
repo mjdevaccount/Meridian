@@ -1,0 +1,25 @@
+@inherits LayoutComponentBase
+
+<div class="layout">
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1 class="brand">Meridian</h1>
+            <span class="brand-subtitle">Real-Time Risk Engine</span>
+        </div>
+        <NavMenu />
+        <div class="sidebar-footer">
+            <span class="version-tag">v1.0</span>
+        </div>
+    </aside>
+    <main class="main-content">
+        <header class="top-bar">
+            <div class="top-bar-status">
+                <span class="status-dot"></span>
+                <span class="status-text">Live</span>
+            </div>
+        </header>
+        <div class="page-content">
+            @Body
+        </div>
+    </main>
+</div>

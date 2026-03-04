@@ -1,0 +1,240 @@
+@page "/analytics"
+@inject IHttpClientFactory HttpClientFactory
+
+<PageTitle>Analytics - Meridian</PageTitle>
+
+<div class="page-header">
+    <h2>Scenario Analytics</h2>
+</div>
+
+<div class="analytics-layout">
+    <div class="card scenario-form-card">
+        <h3>Run Scenario</h3>
+
+        <div class="form-group">
+            <label>Scenario Type</label>
+            <select class="form-control" @bind="scenarioType">
+                <option value="vol-shock">Vol Shock</option>
+                <option value="spot-move">Spot Move</option>
+                <option value="rate-shift">Rate Shift</option>
+            </select>
+        </div>
+
+        @if (scenarioType == "vol-shock" || scenarioType == "spot-move")
+        {
+            <div class="form-group">
+                <label>Symbol</label>
+                <select class="form-control" @bind="selectedSymbol">
+                    <option value="*">All Symbols</option>
+                    <option value="SIM_A">SIM_A</option>
+                    <option value="SIM_B">SIM_B</option>
+                    <option value="SIM_C">SIM_C</option>
+                    <option value="SIM_D">SIM_D</option>
+                    <option value="SIM_E">SIM_E</option>
+                </select>
+            </div>
+        }
+
+        @if (scenarioType == "vol-shock")
+        {
+            <div class="form-group">
+                <label>Vol Shock (%)</label>
+                <input type="number" class="form-control" step="1" @bind="shockValue"
+                       placeholder="e.g. 20 for +20% vol bump" />
+                <span class="form-hint">Relative bump to implied vol (e.g. 20 = +20%)</span>
+            </div>
+        }
+        else if (scenarioType == "spot-move")
+        {
+            <div class="form-group">
+                <label>Spot Move (%)</label>
+                <input type="number" class="form-control" step="0.5" @bind="shockValue"
+                       placeholder="e.g. -5 for -5% spot drop" />
+                <span class="form-hint">Percentage move in underlying (e.g. -5 = -5%)</span>
+            </div>
+        }
+        else if (scenarioType == "rate-shift")
+        {
+            <div class="form-group">
+                <label>Rate Shift (bps)</label>
+                <input type="number" class="form-control" step="5" @bind="shockValue"
+                       placeholder="e.g. 25 for +25bps" />
+                <span class="form-hint">Parallel shift in basis points (e.g. 25 = +0.25%)</span>
+            </div>
+        }
+
+        <button class="btn btn-primary" @onclick="RunScenario" disabled="@isLoading">
+            @if (isLoading)
+            {
+                <span>Running...</span>
+            }
+            else
+            {
+                <span>Run Scenario</span>
+            }
+        </button>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="error-message">@errorMessage</div>
+        }
+    </div>
+
+    <div class="card results-card">
+        <h3>Results</h3>
+
+        @if (scenarioResult != null)
+        {
+            <div class="scenario-summary">
+                <div class="scenario-desc">@scenarioResult.ScenarioDescription</div>
+                <div class="scenario-total @(scenarioResult.TotalPnlImpact >= 0 ? "value-positive" : "value-negative")">
+                    Total PnL Impact: @(scenarioResult.TotalPnlImpact >= 0 ? "+" : "")@scenarioResult.TotalPnlImpact.ToString("N2")
+                </div>
+            </div>
+
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Position</th>
+                            <th>Symbol</th>
+                            <th>Type</th>
+                            <th class="num">Strike</th>
+                            <th class="num">Qty</th>
+                            <th class="num">Base Price</th>
+                            <th class="num">Scenario Price</th>
+                            <th class="num">PnL Impact</th>
+                            <th class="num">Delta Chg</th>
+                            <th class="num">Gamma Chg</th>
+                            <th class="num">Vega Chg</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var pos in scenarioResult.Positions)
+                        {
+                            <tr>
+                                <td class="mono">@pos.PositionId</td>
+                                <td>@pos.Symbol</td>
+                                <td>@pos.OptionType.ToUpperInvariant()</td>
+                                <td class="num mono">@pos.Strike.ToString("N2")</td>
+                                <td class="num mono">@pos.Quantity</td>
+                                <td class="num mono">@pos.BasePrice.ToString("N6")</td>
+                                <td class="num mono">@pos.ScenarioPrice.ToString("N6")</td>
+                                <td class="num mono @(pos.PnlImpact >= 0 ? "value-positive" : "value-negative")">
+                                    @(pos.PnlImpact >= 0 ? "+" : "")@pos.PnlImpact.ToString("N2")
+                                </td>
+                                <td class="num mono">@pos.DeltaChange.ToString("N6")</td>
+                                <td class="num mono">@pos.GammaChange.ToString("N6")</td>
+                                <td class="num mono">@pos.VegaChange.ToString("N6")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">Select a scenario and click Run to see results.</div>
+        }
+    </div>
+</div>
+
+@code {
+    private string scenarioType = "vol-shock";
+    private string selectedSymbol = "*";
+    private double shockValue = 20.0;
+    private bool isLoading;
+    private string? errorMessage;
+    private ScenarioResponse? scenarioResult;
+
+    private async Task RunScenario()
+    {
+        isLoading = true;
+        errorMessage = null;
+        scenarioResult = null;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient("Scenarios");
+            HttpResponseMessage response;
+
+            switch (scenarioType)
+            {
+                case "vol-shock":
+                    response = await client.PostAsJsonAsync("/scenarios/vol-shock", new
+                    {
+                        symbol = selectedSymbol,
+                        shock_percent = shockValue
+                    });
+                    break;
+
+                case "spot-move":
+                    response = await client.PostAsJsonAsync("/scenarios/spot-move", new
+                    {
+                        symbol = selectedSymbol,
+                        move_percent = shockValue
+                    });
+                    break;
+
+                case "rate-shift":
+                    response = await client.PostAsJsonAsync("/scenarios/rate-shift", new
+                    {
+                        shift_bps = shockValue
+                    });
+                    break;
+
+                default:
+                    errorMessage = "Unknown scenario type.";
+                    return;
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                scenarioResult = await response.Content.ReadFromJsonAsync<ScenarioResponse>(
+                    new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+            }
+            else
+            {
+                errorMessage = $"Scenario API returned {(int)response.StatusCode}: {response.ReasonPhrase}";
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            errorMessage = $"Cannot reach scenarios service: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    // Response DTOs matching the Python FastAPI response schema
+    private class ScenarioResponse
+    {
+        public string ScenarioDescription { get; set; } = "";
+        public double TotalPnlImpact { get; set; }
+        public List<ScenarioPositionResult> Positions { get; set; } = new();
+    }
+
+    private class ScenarioPositionResult
+    {
+        public string PositionId { get; set; } = "";
+        public string Symbol { get; set; } = "";
+        public string OptionType { get; set; } = "";
+        public double Strike { get; set; }
+        public int Quantity { get; set; }
+        public double BasePrice { get; set; }
+        public double ScenarioPrice { get; set; }
+        public double PnlImpact { get; set; }
+        public double DeltaChange { get; set; }
+        public double GammaChange { get; set; }
+        public double VegaChange { get; set; }
+    }
+}

@@ -1,0 +1,237 @@
+@page "/risk"
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<PageTitle>Risk Monitor - Meridian</PageTitle>
+
+<div class="page-header">
+    <h2>Risk Monitor</h2>
+    <span class="connection-status @(isConnected ? "connected" : "disconnected")">
+        @(isConnected ? "Connected" : "Reconnecting...")
+    </span>
+</div>
+
+@if (aggregate != null)
+{
+    <div class="summary-cards">
+        <div class="card summary-card risk-card">
+            <div class="card-label">Delta Exposure</div>
+            <div class="card-value mono">@aggregate.AggregateGreeks.Delta.ToString("N4")</div>
+            <div class="risk-bar-container">
+                <div class="risk-bar @GetBarClass(Math.Abs(aggregate.AggregateGreeks.Delta), DeltaLimit)"
+                     style="width: @GetBarWidth(Math.Abs(aggregate.AggregateGreeks.Delta), DeltaLimit)%">
+                </div>
+            </div>
+            <div class="risk-limit-label">
+                @Math.Abs(aggregate.AggregateGreeks.Delta).ToString("N2") / @DeltaLimit.ToString("N0")
+            </div>
+        </div>
+        <div class="card summary-card risk-card">
+            <div class="card-label">Gamma Exposure</div>
+            <div class="card-value mono">@aggregate.AggregateGreeks.Gamma.ToString("N6")</div>
+            <div class="risk-bar-container">
+                <div class="risk-bar @GetBarClass(Math.Abs(aggregate.AggregateGreeks.Gamma), GammaLimit)"
+                     style="width: @GetBarWidth(Math.Abs(aggregate.AggregateGreeks.Gamma), GammaLimit)%">
+                </div>
+            </div>
+            <div class="risk-limit-label">
+                @Math.Abs(aggregate.AggregateGreeks.Gamma).ToString("N4") / @GammaLimit.ToString("N0")
+            </div>
+        </div>
+        <div class="card summary-card risk-card">
+            <div class="card-label">Vega Exposure</div>
+            <div class="card-value mono">@aggregate.AggregateGreeks.Vega.ToString("N4")</div>
+            <div class="risk-bar-container">
+                <div class="risk-bar @GetBarClass(Math.Abs(aggregate.AggregateGreeks.Vega), VegaLimit)"
+                     style="width: @GetBarWidth(Math.Abs(aggregate.AggregateGreeks.Vega), VegaLimit)%">
+                </div>
+            </div>
+            <div class="risk-limit-label">
+                @Math.Abs(aggregate.AggregateGreeks.Vega).ToString("N2") / @VegaLimit.ToString("N0")
+            </div>
+        </div>
+        <div class="card summary-card risk-card @(aggregate.TotalUnrealizedPnl < PnlLimit ? "card-breach" : "")">
+            <div class="card-label">PnL Stop-Loss</div>
+            <div class="card-value mono @(aggregate.TotalUnrealizedPnl >= 0 ? "value-positive" : "value-negative")">
+                @(aggregate.TotalUnrealizedPnl >= 0 ? "+" : "")@aggregate.TotalUnrealizedPnl.ToString("N2")
+            </div>
+            <div class="risk-bar-container">
+                @{
+                    var pnlRatio = aggregate.TotalUnrealizedPnl < 0
+                        ? Math.Min(Math.Abs(aggregate.TotalUnrealizedPnl) / Math.Abs(PnlLimit) * 100, 100)
+                        : 0;
+                }
+                <div class="risk-bar @GetPnlBarClass(aggregate.TotalUnrealizedPnl, PnlLimit)"
+                     style="width: @pnlRatio.ToString("N0")%">
+                </div>
+            </div>
+            <div class="risk-limit-label">
+                Limit: @PnlLimit.ToString("N0")
+            </div>
+        </div>
+    </div>
+
+    <div class="card table-card">
+        <h3>Risk Thresholds</h3>
+        <div class="table-wrapper">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th class="num">Current Value</th>
+                        <th class="num">Limit</th>
+                        <th class="num">Utilization</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @{
+                        var metrics = new (string Name, decimal Current, decimal Limit)[]
+                        {
+                            ("Delta", Math.Abs(aggregate.AggregateGreeks.Delta), DeltaLimit),
+                            ("Gamma", Math.Abs(aggregate.AggregateGreeks.Gamma), GammaLimit),
+                            ("Vega", Math.Abs(aggregate.AggregateGreeks.Vega), VegaLimit),
+                        };
+                    }
+                    @foreach (var m in metrics)
+                    {
+                        var pct = m.Limit > 0 ? m.Current / m.Limit * 100 : 0;
+                        <tr>
+                            <td>@m.Name</td>
+                            <td class="num mono">@m.Current.ToString("N4")</td>
+                            <td class="num mono">@m.Limit.ToString("N2")</td>
+                            <td class="num mono">@pct.ToString("N1")%</td>
+                            <td>
+                                <span class="status-badge @GetBadgeClass(pct)">
+                                    @GetStatusLabel(pct)
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                    <tr>
+                        <td>PnL Stop-Loss</td>
+                        <td class="num mono @(aggregate.TotalUnrealizedPnl >= 0 ? "value-positive" : "value-negative")">
+                            @aggregate.TotalUnrealizedPnl.ToString("N2")
+                        </td>
+                        <td class="num mono">@PnlLimit.ToString("N2")</td>
+                        <td class="num mono">
+                            @(aggregate.TotalUnrealizedPnl < 0
+                                ? (Math.Abs(aggregate.TotalUnrealizedPnl) / Math.Abs(PnlLimit) * 100).ToString("N1")
+                                : "0.0")%
+                        </td>
+                        <td>
+                            @{
+                                var pnlPct = aggregate.TotalUnrealizedPnl < 0
+                                    ? Math.Abs(aggregate.TotalUnrealizedPnl) / Math.Abs(PnlLimit) * 100
+                                    : 0;
+                            }
+                            <span class="status-badge @GetBadgeClass(pnlPct)">
+                                @GetStatusLabel(pnlPct)
+                            </span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+else
+{
+    <div class="card">
+        <div class="empty-state">Awaiting risk data from Redis...</div>
+    </div>
+}
+
+@code {
+    private HubConnection? hubConnection;
+    private PortfolioAggregate? aggregate;
+    private bool isConnected;
+
+    // Hardcoded risk thresholds
+    private const decimal DeltaLimit = 50m;
+    private const decimal GammaLimit = 5m;
+    private const decimal VegaLimit = 10m;
+    private const decimal PnlLimit = -500m;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/dashboardhub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<PortfolioAggregate>("PortfolioUpdate", (agg) =>
+        {
+            aggregate = agg;
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.Closed += _ =>
+        {
+            isConnected = false;
+            return InvokeAsync(StateHasChanged);
+        };
+
+        hubConnection.Reconnected += _ =>
+        {
+            isConnected = true;
+            return InvokeAsync(StateHasChanged);
+        };
+
+        await hubConnection.StartAsync();
+        isConnected = hubConnection.State == HubConnectionState.Connected;
+    }
+
+    private string GetBarClass(decimal current, decimal limit)
+    {
+        if (limit <= 0) return "bar-green";
+        var pct = current / limit * 100;
+        return pct switch
+        {
+            > 80 => "bar-red",
+            > 50 => "bar-yellow",
+            _ => "bar-green"
+        };
+    }
+
+    private string GetPnlBarClass(decimal pnl, decimal limit)
+    {
+        if (pnl >= 0) return "bar-green";
+        var pct = Math.Abs(pnl) / Math.Abs(limit) * 100;
+        return pct switch
+        {
+            > 80 => "bar-red",
+            > 50 => "bar-yellow",
+            _ => "bar-green"
+        };
+    }
+
+    private string GetBarWidth(decimal current, decimal limit)
+    {
+        if (limit <= 0) return "0";
+        var pct = Math.Min(current / limit * 100, 100);
+        return pct.ToString("N0");
+    }
+
+    private string GetBadgeClass(decimal pct) => pct switch
+    {
+        > 80 => "badge-red",
+        > 50 => "badge-yellow",
+        _ => "badge-green"
+    };
+
+    private string GetStatusLabel(decimal pct) => pct switch
+    {
+        > 80 => "BREACH",
+        > 50 => "WARNING",
+        _ => "OK"
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

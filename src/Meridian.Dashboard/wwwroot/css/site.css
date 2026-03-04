@@ -1,0 +1,623 @@
+/* ==========================================================================
+   Meridian Dashboard — Dark Theme CSS
+   ========================================================================== */
+
+/* ---------- Reset & Base ---------- */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #e0e0e0;
+    background-color: #1a1a2e;
+}
+
+/* ---------- Layout ---------- */
+.layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+    width: 220px;
+    background-color: #0f3460;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-header {
+    padding: 24px 20px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.brand {
+    font-size: 22px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin: 0;
+}
+
+.brand-subtitle {
+    display: block;
+    font-size: 10px;
+    color: #8892b0;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+
+.sidebar-footer {
+    margin-top: auto;
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.version-tag {
+    font-size: 11px;
+    color: #555e7e;
+}
+
+/* ---------- Navigation ---------- */
+.nav-menu ul {
+    list-style: none;
+    padding: 12px 0;
+}
+
+.nav-item {
+    margin: 2px 0;
+}
+
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    color: #8892b0;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    border-left: 3px solid transparent;
+}
+
+.nav-link:hover {
+    color: #ccd6f6;
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.nav-link.active {
+    color: #64ffda;
+    background-color: rgba(100, 255, 218, 0.06);
+    border-left-color: #64ffda;
+}
+
+.nav-icon {
+    font-size: 10px;
+    width: 16px;
+    text-align: center;
+}
+
+/* ---------- Main Content ---------- */
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 12px 28px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    background-color: #16213e;
+}
+
+.top-bar-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #00e676;
+    box-shadow: 0 0 6px rgba(0, 230, 118, 0.5);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.status-text {
+    font-size: 12px;
+    color: #00e676;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.page-content {
+    flex: 1;
+    padding: 24px 28px;
+    overflow-y: auto;
+}
+
+/* ---------- Page Header ---------- */
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+}
+
+.page-header h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #ccd6f6;
+}
+
+.connection-status {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 4px 10px;
+    border-radius: 4px;
+}
+
+.connection-status.connected {
+    color: #00e676;
+    background-color: rgba(0, 230, 118, 0.1);
+}
+
+.connection-status.disconnected {
+    color: #ff5252;
+    background-color: rgba(255, 82, 82, 0.1);
+}
+
+/* ---------- Cards ---------- */
+.card {
+    background-color: #16213e;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #8892b0;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 16px;
+}
+
+/* ---------- Summary Cards ---------- */
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.summary-card {
+    text-align: center;
+    padding: 20px 16px;
+    position: relative;
+    overflow: hidden;
+}
+
+.summary-card.card-positive {
+    border-color: rgba(0, 230, 118, 0.2);
+    box-shadow: 0 0 12px rgba(0, 230, 118, 0.05);
+}
+
+.summary-card.card-negative {
+    border-color: rgba(255, 82, 82, 0.2);
+    box-shadow: 0 0 12px rgba(255, 82, 82, 0.05);
+}
+
+.summary-card.card-breach {
+    border-color: rgba(255, 82, 82, 0.4);
+    box-shadow: 0 0 16px rgba(255, 82, 82, 0.1);
+    animation: breach-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes breach-pulse {
+    0%, 100% { box-shadow: 0 0 16px rgba(255, 82, 82, 0.1); }
+    50% { box-shadow: 0 0 24px rgba(255, 82, 82, 0.25); }
+}
+
+.card-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #8892b0;
+    margin-bottom: 8px;
+}
+
+.card-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #ccd6f6;
+}
+
+.card-value.dim {
+    color: #555e7e;
+}
+
+/* ---------- Values ---------- */
+.value-positive {
+    color: #00e676 !important;
+}
+
+.value-negative {
+    color: #ff5252 !important;
+}
+
+.mono {
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+}
+
+/* ---------- Tables ---------- */
+.table-card {
+    overflow: hidden;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.data-table thead th {
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #8892b0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    white-space: nowrap;
+}
+
+.data-table thead th.num {
+    text-align: right;
+}
+
+.data-table tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    white-space: nowrap;
+}
+
+.data-table tbody td.num {
+    text-align: right;
+}
+
+.data-table tbody tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.015);
+}
+
+.data-table tbody tr:hover {
+    background-color: rgba(100, 255, 218, 0.03);
+}
+
+/* ---------- Risk Bars ---------- */
+.risk-card {
+    text-align: left;
+}
+
+.risk-bar-container {
+    width: 100%;
+    height: 8px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    margin: 12px 0 6px;
+    overflow: hidden;
+}
+
+.risk-bar {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.bar-green {
+    background-color: #00e676;
+    box-shadow: 0 0 6px rgba(0, 230, 118, 0.3);
+}
+
+.bar-yellow {
+    background-color: #ffc107;
+    box-shadow: 0 0 6px rgba(255, 193, 7, 0.3);
+}
+
+.bar-red {
+    background-color: #ff5252;
+    box-shadow: 0 0 6px rgba(255, 82, 82, 0.3);
+}
+
+.risk-limit-label {
+    font-size: 11px;
+    color: #555e7e;
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+}
+
+/* ---------- Status Badges ---------- */
+.status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.badge-green {
+    color: #00e676;
+    background-color: rgba(0, 230, 118, 0.12);
+}
+
+.badge-yellow {
+    color: #ffc107;
+    background-color: rgba(255, 193, 7, 0.12);
+}
+
+.badge-red {
+    color: #ff5252;
+    background-color: rgba(255, 82, 82, 0.12);
+}
+
+/* ---------- Analytics / Forms ---------- */
+.analytics-layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 20px;
+    align-items: start;
+}
+
+.scenario-form-card {
+    position: sticky;
+    top: 24px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #8892b0;
+    margin-bottom: 6px;
+}
+
+.form-control {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #ccd6f6;
+    background-color: #1a1a2e;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.15s ease;
+    font-family: inherit;
+}
+
+.form-control:focus {
+    border-color: #64ffda;
+    box-shadow: 0 0 0 2px rgba(100, 255, 218, 0.1);
+}
+
+select.form-control {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238892b0' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+}
+
+select.form-control option {
+    background-color: #1a1a2e;
+    color: #ccd6f6;
+}
+
+.form-hint {
+    display: block;
+    font-size: 11px;
+    color: #555e7e;
+    margin-top: 4px;
+}
+
+/* ---------- Buttons ---------- */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+    letter-spacing: 0.3px;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    width: 100%;
+    background-color: #0f3460;
+    color: #64ffda;
+    border: 1px solid rgba(100, 255, 218, 0.2);
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: rgba(100, 255, 218, 0.1);
+    border-color: #64ffda;
+}
+
+/* ---------- Scenario Results ---------- */
+.scenario-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background-color: rgba(255, 255, 255, 0.02);
+    border-radius: 6px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.scenario-desc {
+    font-size: 13px;
+    color: #8892b0;
+}
+
+.scenario-total {
+    font-size: 16px;
+    font-weight: 700;
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas", monospace;
+}
+
+/* ---------- Error & Empty States ---------- */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #555e7e;
+    font-size: 13px;
+}
+
+.error-message {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background-color: rgba(255, 82, 82, 0.1);
+    border: 1px solid rgba(255, 82, 82, 0.2);
+    border-radius: 4px;
+    color: #ff5252;
+    font-size: 12px;
+}
+
+/* ---------- Blazor Error UI ---------- */
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    padding: 12px;
+    background-color: #16213e;
+    border-top: 2px solid #ff5252;
+    color: #ff5252;
+    text-align: center;
+    font-size: 13px;
+    z-index: 1000;
+}
+
+#blazor-error-ui .reload,
+#blazor-error-ui .dismiss {
+    color: #64ffda;
+    margin-left: 12px;
+}
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1024px) {
+    .analytics-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .scenario-form-card {
+        position: static;
+    }
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        width: 60px;
+    }
+
+    .brand-subtitle,
+    .nav-label,
+    .version-tag {
+        display: none;
+    }
+
+    .brand {
+        font-size: 14px;
+        text-align: center;
+    }
+
+    .sidebar-header {
+        padding: 16px 8px;
+        text-align: center;
+    }
+
+    .nav-link {
+        padding: 12px;
+        justify-content: center;
+    }
+
+    .nav-icon {
+        font-size: 14px;
+    }
+
+    .page-content {
+        padding: 16px;
+    }
+
+    .summary-cards {
+        grid-template-columns: 1fr 1fr;
+    }
+}

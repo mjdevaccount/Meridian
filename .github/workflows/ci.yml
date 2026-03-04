@@ -1,0 +1,40 @@
+name: Meridian CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore Meridian.sln
+
+      - name: Build
+        run: dotnet build Meridian.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test Meridian.sln --no-build --configuration Release --verbosity normal
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify Python scenarios
+        run: |
+          cd src/Meridian.Scenarios
+          pip install -r requirements.txt
+          python -c "from app.pricing import bs_price, bs_greeks; print('Python pricing OK')"
+          python -c "from app.scenarios import get_sample_portfolio; p = get_sample_portfolio(); print(f'Portfolio: {len(p)} positions')"

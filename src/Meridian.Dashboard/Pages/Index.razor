@@ -1,0 +1,141 @@
+@page "/"
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<PageTitle>Portfolio - Meridian</PageTitle>
+
+<div class="page-header">
+    <h2>Portfolio Overview</h2>
+    <span class="connection-status @(isConnected ? "connected" : "disconnected")">
+        @(isConnected ? "Connected" : "Reconnecting...")
+    </span>
+</div>
+
+@if (aggregate != null)
+{
+    <div class="summary-cards">
+        <div class="card summary-card @(aggregate.TotalUnrealizedPnl >= 0 ? "card-positive" : "card-negative")">
+            <div class="card-label">Total PnL</div>
+            <div class="card-value @(aggregate.TotalUnrealizedPnl >= 0 ? "value-positive" : "value-negative")">
+                @(aggregate.TotalUnrealizedPnl >= 0 ? "+" : "")@aggregate.TotalUnrealizedPnl.ToString("N2")
+            </div>
+        </div>
+        <div class="card summary-card">
+            <div class="card-label">Positions</div>
+            <div class="card-value">@aggregate.PositionCount</div>
+        </div>
+        <div class="card summary-card">
+            <div class="card-label">Aggregate Delta</div>
+            <div class="card-value mono">@aggregate.AggregateGreeks.Delta.ToString("N4")</div>
+        </div>
+        <div class="card summary-card">
+            <div class="card-label">Aggregate Gamma</div>
+            <div class="card-value mono">@aggregate.AggregateGreeks.Gamma.ToString("N4")</div>
+        </div>
+        <div class="card summary-card">
+            <div class="card-label">Aggregate Vega</div>
+            <div class="card-value mono">@aggregate.AggregateGreeks.Vega.ToString("N4")</div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="summary-cards">
+        <div class="card summary-card">
+            <div class="card-label">Awaiting Data</div>
+            <div class="card-value dim">--</div>
+        </div>
+    </div>
+}
+
+<div class="card table-card">
+    <h3>Positions</h3>
+    @if (positions.Count > 0)
+    {
+        <div class="table-wrapper">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Position ID</th>
+                        <th class="num">Delta</th>
+                        <th class="num">Gamma</th>
+                        <th class="num">Vega</th>
+                        <th class="num">Theta</th>
+                        <th class="num">Rho</th>
+                        <th class="num">PnL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var pos in positions)
+                    {
+                        <tr>
+                            <td class="mono">@pos.PositionId</td>
+                            <td class="num mono">@pos.Delta.ToString("N4")</td>
+                            <td class="num mono">@pos.Gamma.ToString("N6")</td>
+                            <td class="num mono">@pos.Vega.ToString("N4")</td>
+                            <td class="num mono">@pos.Theta.ToString("N4")</td>
+                            <td class="num mono">@pos.Rho.ToString("N4")</td>
+                            <td class="num mono @(pos.Pnl >= 0 ? "value-positive" : "value-negative")">
+                                @(pos.Pnl >= 0 ? "+" : "")@pos.Pnl.ToString("N2")
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="empty-state">No position data available. Waiting for Redis updates...</div>
+    }
+</div>
+
+@code {
+    private HubConnection? hubConnection;
+    private PortfolioAggregate? aggregate;
+    private List<PositionData> positions = new();
+    private bool isConnected;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/dashboardhub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<PortfolioAggregate>("PortfolioUpdate", (agg) =>
+        {
+            aggregate = agg;
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.On<List<PositionData>>("PositionsUpdate", (pos) =>
+        {
+            positions = pos;
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.Closed += _ =>
+        {
+            isConnected = false;
+            return InvokeAsync(StateHasChanged);
+        };
+
+        hubConnection.Reconnected += _ =>
+        {
+            isConnected = true;
+            return InvokeAsync(StateHasChanged);
+        };
+
+        await hubConnection.StartAsync();
+        isConnected = hubConnection.State == HubConnectionState.Connected;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}
