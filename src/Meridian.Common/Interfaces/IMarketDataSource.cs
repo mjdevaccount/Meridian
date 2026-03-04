@@ -6,4 +6,5 @@ public interface IMarketDataSource
 {
     IObservable<MarketTick> GetTickStream(string symbol);
     IObservable<MarketTick> GetAllTicksStream();
+    Task<bool> SubscribeToSymbolAsync(string symbol) => Task.FromResult(true);
 }

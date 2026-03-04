@@ -3,6 +3,7 @@ using System.Text.Json;
 using Confluent.Kafka;
 using Meridian.Common.Configuration;
 using Meridian.Common.Health;
+using Meridian.Common.Messaging;
 using Meridian.Common.Models;
 using Meridian.Pricing.Models;
 using Meridian.Pricing.Streams;
@@ -108,17 +109,29 @@ public class Program
             Console.WriteLine($"SQL Server unavailable: {ex.Message}. Continuing without SQL.");
         }
 
-        // Build sample portfolio (same as Pricing)
+        // Load positions from SQL or seed with sample portfolio
         var now = DateTime.UtcNow;
-        var positions = BuildSamplePortfolio(now);
-
-        // Save positions to SQL
+        List<Position> positions;
         if (sql != null)
         {
-            foreach (var pos in positions)
+            positions = await sql.GetOpenPositionsAsync();
+            if (positions.Count == 0)
             {
-                try { await sql.SavePositionAsync(pos); } catch { }
+                Log.Information("No positions in database, seeding with sample portfolio");
+                positions = BuildSamplePortfolio(now);
+                foreach (var pos in positions)
+                {
+                    try { await sql.SavePositionAsync(pos); } catch { }
+                }
             }
+            else
+            {
+                Log.Information("Loaded {Count} positions from SQL", positions.Count);
+            }
+        }
+        else
+        {
+            positions = BuildSamplePortfolio(now);
         }
 
         // Set up Kafka consumer for market ticks
@@ -231,6 +244,52 @@ public class Program
                 Console.ResetColor();
             });
 
+        // Portfolio command consumer for dynamic position management
+        PortfolioCommandConsumer? commandConsumer = null;
+        IDisposable? commandSub = null;
+        try
+        {
+            commandConsumer = new PortfolioCommandConsumer(kafkaBootstrap, "portfolio.commands", "meridian-risk-cmds");
+            commandSub = commandConsumer.Commands.Subscribe(async cmd =>
+            {
+                switch (cmd.Type)
+                {
+                    case CommandType.Add:
+                        Log.Information("Adding position {PositionId}", cmd.Position.PositionId);
+                        pipeline.AddPosition(cmd.Position);
+                        if (sql != null)
+                        {
+                            try { await sql.SavePositionAsync(cmd.Position); }
+                            catch (Exception ex) { Log.Error(ex, "Failed to save position to SQL"); }
+                        }
+                        break;
+                    case CommandType.Remove:
+                        Log.Information("Removing position {PositionId}", cmd.Position.PositionId);
+                        pipeline.RemovePosition(cmd.Position.PositionId);
+                        if (sql != null)
+                        {
+                            try { await sql.ClosePositionAsync(cmd.Position.PositionId); }
+                            catch (Exception ex) { Log.Error(ex, "Failed to close position in SQL"); }
+                        }
+                        break;
+                    case CommandType.Update:
+                        pipeline.RemovePosition(cmd.Position.PositionId);
+                        pipeline.AddPosition(cmd.Position);
+                        if (sql != null)
+                        {
+                            try { await sql.SavePositionAsync(cmd.Position); }
+                            catch (Exception ex) { Log.Error(ex, "Failed to update position in SQL"); }
+                        }
+                        break;
+                }
+            });
+            Log.Information("Portfolio command consumer started for Risk");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to start portfolio command consumer");
+        }
+
         // Start health check server on port 8092
         HealthCheckServer? healthServer = null;
         try
@@ -272,6 +331,8 @@ public class Program
         sqlSnapshotSub.Dispose();
         alertSub.Dispose();
         metricsSub.Dispose();
+        commandSub?.Dispose();
+        commandConsumer?.Dispose();
         tickStream.Dispose();
         pipeline.Dispose();
         redis?.Dispose();

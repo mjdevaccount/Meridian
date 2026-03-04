@@ -1,113 +1,109 @@
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 using Meridian.Common.Configuration;
 using Meridian.Common.Interfaces;
 using Meridian.Common.Models;
 
 namespace Meridian.MarketData.Simulation;
 
-/// <summary>
-/// Orchestrates multiple GBM price generators and vol surface generators.
-/// Implements IMarketDataSource to provide unified tick and vol surface streams.
-/// </summary>
 public class MarketDataSimulator : IMarketDataSource, IDisposable
 {
     private readonly MarketDataConfig _config;
     private readonly Dictionary<string, GeometricBrownianMotion> _gbmInstances = new();
     private readonly Dictionary<string, VolSurfaceGenerator> _volSurfaceGenerators = new();
     private readonly Dictionary<string, IObservable<MarketTick>> _tickStreams = new();
+    private readonly List<IDisposable> _streamSubscriptions = new();
     private readonly EventInjector _eventInjector;
-    private readonly IObservable<MarketTick> _allTicksStream;
-    private readonly IObservable<VolSurfaceUpdate> _volSurfaceStream;
+    private readonly Subject<MarketTick> _allTicksSubject = new();
+    private readonly Subject<VolSurfaceUpdate> _volSurfaceSubject = new();
+    private readonly object _lock = new();
 
     public MarketDataSimulator(MarketDataConfig config)
     {
         _config = config;
 
-        // Create a GBM instance and vol surface generator for each configured symbol
         foreach (var symbolConfig in config.Symbols)
         {
-            var gbm = new GeometricBrownianMotion(
-                symbolConfig.Symbol,
-                symbolConfig.InitialPrice,
-                symbolConfig.Drift,
-                symbolConfig.Volatility);
-
-            _gbmInstances[symbolConfig.Symbol] = gbm;
-
-            var volGen = new VolSurfaceGenerator(
-                symbolConfig.Symbol,
-                initialAtmVol: (double)symbolConfig.Volatility,
-                theta: (double)symbolConfig.Volatility);
-
-            _volSurfaceGenerators[symbolConfig.Symbol] = volGen;
-
-            // Create and cache the tick stream (shared via Publish + RefCount)
-            var tickStream = gbm.GenerateTickStream(config.TicksPerSecond)
-                .Publish()
-                .RefCount();
-
-            _tickStreams[symbolConfig.Symbol] = tickStream;
+            AddSymbolInternal(symbolConfig.Symbol, symbolConfig.InitialPrice,
+                symbolConfig.Drift, symbolConfig.Volatility);
         }
 
-        // Create the event injector
         _eventInjector = new EventInjector(_gbmInstances, _volSurfaceGenerators);
-
-        // Merge all tick streams
-        _allTicksStream = _tickStreams.Values.Merge();
-
-        // Create vol surface streams for each symbol, merging them
-        var volStreams = new List<IObservable<VolSurfaceUpdate>>();
-        foreach (var symbolConfig in config.Symbols)
-        {
-            var volStream = _volSurfaceGenerators[symbolConfig.Symbol]
-                .GenerateVolSurfaceStream(
-                    _tickStreams[symbolConfig.Symbol],
-                    config.VolSurfaceUpdatesPerSecond);
-            volStreams.Add(volStream);
-        }
-
-        _volSurfaceStream = volStreams.Merge();
     }
 
-    /// <summary>
-    /// Gets the tick stream for a specific symbol.
-    /// </summary>
+    public void AddSymbol(string symbol, decimal initialPrice, decimal drift = 0.05m, decimal volatility = 0.25m)
+    {
+        lock (_lock)
+        {
+            if (_gbmInstances.ContainsKey(symbol)) return;
+            AddSymbolInternal(symbol, initialPrice, drift, volatility);
+        }
+    }
+
+    private void AddSymbolInternal(string symbol, decimal initialPrice, decimal drift, decimal volatility)
+    {
+        var gbm = new GeometricBrownianMotion(symbol, initialPrice, drift, volatility);
+        _gbmInstances[symbol] = gbm;
+
+        var volGen = new VolSurfaceGenerator(symbol,
+            initialAtmVol: (double)volatility,
+            theta: (double)volatility);
+        _volSurfaceGenerators[symbol] = volGen;
+
+        var tickStream = gbm.GenerateTickStream(_config.TicksPerSecond)
+            .Publish()
+            .RefCount();
+        _tickStreams[symbol] = tickStream;
+
+        // Feed into the shared subjects
+        var tickSub = tickStream.Subscribe(tick => _allTicksSubject.OnNext(tick));
+        _streamSubscriptions.Add(tickSub);
+
+        var volStream = volGen.GenerateVolSurfaceStream(tickStream, _config.VolSurfaceUpdatesPerSecond);
+        var volSub = volStream.Subscribe(update => _volSurfaceSubject.OnNext(update));
+        _streamSubscriptions.Add(volSub);
+    }
+
     public IObservable<MarketTick> GetTickStream(string symbol)
     {
-        if (_tickStreams.TryGetValue(symbol, out var stream))
-            return stream;
-
+        lock (_lock)
+        {
+            if (_tickStreams.TryGetValue(symbol, out var stream))
+                return stream;
+        }
         return Observable.Empty<MarketTick>();
     }
 
-    /// <summary>
-    /// Gets the merged tick stream for all symbols.
-    /// </summary>
-    public IObservable<MarketTick> GetAllTicksStream()
+    public IObservable<MarketTick> GetAllTicksStream() => _allTicksSubject.AsObservable();
+
+    public IObservable<VolSurfaceUpdate> GetVolSurfaceStream() => _volSurfaceSubject.AsObservable();
+
+    public Task<bool> SubscribeToSymbolAsync(string symbol)
     {
-        return _allTicksStream;
+        lock (_lock)
+        {
+            if (_gbmInstances.ContainsKey(symbol)) return Task.FromResult(true);
+            // For simulated mode, create a GBM with default params
+            AddSymbolInternal(symbol, 100m, 0.05m, 0.25m);
+        }
+        return Task.FromResult(true);
     }
 
-    /// <summary>
-    /// Gets the merged vol surface update stream for all symbols.
-    /// </summary>
-    public IObservable<VolSurfaceUpdate> GetVolSurfaceStream()
-    {
-        return _volSurfaceStream;
-    }
-
-    /// <summary>
-    /// Provides access to the event injector for injecting market events.
-    /// </summary>
     public EventInjector EventInjector => _eventInjector;
 
-    /// <summary>
-    /// Gets the current list of configured symbols.
-    /// </summary>
-    public IReadOnlyList<string> Symbols => _config.Symbols.Select(s => s.Symbol).ToList().AsReadOnly();
+    public IReadOnlyList<string> Symbols
+    {
+        get
+        {
+            lock (_lock) { return _gbmInstances.Keys.ToList().AsReadOnly(); }
+        }
+    }
 
     public void Dispose()
     {
         _eventInjector.Dispose();
+        foreach (var sub in _streamSubscriptions) sub.Dispose();
+        _allTicksSubject.Dispose();
+        _volSurfaceSubject.Dispose();
     }
 }

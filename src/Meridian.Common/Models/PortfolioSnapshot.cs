@@ -44,6 +44,25 @@ public class PortfolioSnapshot
             Timestamp = updates.Count > 0 ? updates[^1].Timestamp : Timestamp
         };
     }
+
+    public PortfolioSnapshot RemovePosition(string positionId)
+    {
+        var newPositions = Positions.Remove(positionId);
+        var aggGreeks = GreeksResult.Zero;
+        decimal totalPnl = 0;
+        foreach (var kvp in newPositions)
+        {
+            aggGreeks = aggGreeks + kvp.Value.Greeks.Scale(kvp.Value.Position.Quantity);
+            totalPnl += kvp.Value.UnrealizedPnl;
+        }
+        return new PortfolioSnapshot
+        {
+            Positions = newPositions,
+            AggregateGreeks = aggGreeks,
+            TotalUnrealizedPnl = totalPnl,
+            Timestamp = DateTime.UtcNow
+        };
+    }
 }
 
 public record PositionState(

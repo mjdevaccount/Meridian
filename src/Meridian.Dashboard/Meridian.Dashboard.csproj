@@ -5,7 +5,12 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Confluent.Kafka" Version="2.*" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.*" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.*" />
     <PackageReference Include="StackExchange.Redis" Version="2.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Meridian.Common\Meridian.Common.csproj" />
   </ItemGroup>
 </Project>

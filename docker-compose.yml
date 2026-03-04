@@ -96,6 +96,19 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
 
+  ib-gateway:
+    image: ghcr.io/gnzsnz/ib-gateway:stable
+    environment:
+      TWS_USERID: "${IB_USERNAME:-}"
+      TWS_PASSWORD: "${IB_PASSWORD:-}"
+      TRADING_MODE: "${IB_TRADING_MODE:-paper}"
+      TWS_ACCEPT_INCOMING: "accept"
+      READ_ONLY_API: "yes"
+    ports:
+      - "4002:4002"
+    profiles: ["live"]
+    restart: unless-stopped
+
   marketdata:
     build:
       context: .
@@ -108,6 +121,7 @@ services:
       - "8090:8090"
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
+      MARKET_DATA_MODE: "${MARKET_DATA_MODE:-Simulated}"
       SEQ_URL: http://seq:5341
 
   pricing:
@@ -119,11 +133,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      sql-init:
+        condition: service_completed_successfully
     ports:
       - "9101:9101"
       - "8091:8091"
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
+      SQL_CONNECTION: "Server=sqlserver,1433;Database=Meridian;User Id=sa;Password=Meridian_Dev_123!;TrustServerCertificate=true"
       SEQ_URL: http://seq:5341
 
   risk:
@@ -165,9 +182,15 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
+      sql-init:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     environment:
       REDIS_CONNECTION: redis:6379
+      KAFKA_BOOTSTRAP: kafka:29092
+      SQL_CONNECTION: "Server=sqlserver,1433;Database=Meridian;User Id=sa;Password=Meridian_Dev_123!;TrustServerCertificate=true"
       SCENARIOS_URL: http://scenarios:8000
       ASPNETCORE_URLS: http://+:8080

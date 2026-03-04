@@ -572,6 +572,85 @@ select.form-control option {
     background-color: rgba(255, 255, 255, 0.2);
 }
 
+/* ---------- Position Management ---------- */
+.btn-add {
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #64ffda;
+    background-color: rgba(100, 255, 218, 0.08);
+    border: 1px solid rgba(100, 255, 218, 0.2);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-add:hover {
+    background-color: rgba(100, 255, 218, 0.15);
+    border-color: #64ffda;
+}
+
+.btn-danger-sm {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #ff5252;
+    background-color: rgba(255, 82, 82, 0.08);
+    border: 1px solid rgba(255, 82, 82, 0.2);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.btn-danger-sm:hover {
+    background-color: rgba(255, 82, 82, 0.2);
+    border-color: #ff5252;
+}
+
+.btn-danger-sm:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.position-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.form-actions {
+    display: flex;
+    gap: 12px;
+    padding-top: 8px;
+}
+
+.form-actions .btn-primary {
+    width: auto;
+    padding: 10px 24px;
+}
+
+.success-message {
+    margin-top: 8px;
+    padding: 10px 14px;
+    background-color: rgba(0, 230, 118, 0.1);
+    border: 1px solid rgba(0, 230, 118, 0.2);
+    border-radius: 4px;
+    color: #00e676;
+    font-size: 12px;
+}
+
+.form-card {
+    margin-bottom: 20px;
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 1024px) {
     .analytics-layout {

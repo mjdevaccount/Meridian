@@ -151,5 +151,39 @@ public class SqlPositionRepository : IDisposable
         await cmd.ExecuteNonQueryAsync();
     }
 
+    public async Task<List<Position>> GetOpenPositionsAsync()
+    {
+        using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync();
+        using var cmd = new SqlCommand("SELECT * FROM Positions WHERE IsOpen = 1", conn);
+        using var reader = await cmd.ExecuteReaderAsync();
+        var positions = new List<Position>();
+        while (await reader.ReadAsync())
+        {
+            positions.Add(new Position(
+                reader.GetString(reader.GetOrdinal("PositionId")),
+                new Option(
+                    reader.GetString(reader.GetOrdinal("Symbol")),
+                    reader.GetString(reader.GetOrdinal("Underlier")),
+                    Enum.Parse<OptionType>(reader.GetString(reader.GetOrdinal("OptionType")), true),
+                    reader.GetDecimal(reader.GetOrdinal("Strike")),
+                    reader.GetDateTime(reader.GetOrdinal("Expiry")),
+                    ExerciseStyle.European),
+                reader.GetInt32(reader.GetOrdinal("Quantity")),
+                reader.GetDecimal(reader.GetOrdinal("EntryPrice")),
+                reader.GetDateTime(reader.GetOrdinal("EntryTime"))));
+        }
+        return positions;
+    }
+
+    public async Task ClosePositionAsync(string positionId)
+    {
+        using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync();
+        using var cmd = new SqlCommand("UPDATE Positions SET IsOpen = 0 WHERE PositionId = @PositionId", conn);
+        cmd.Parameters.AddWithValue("@PositionId", positionId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
     public void Dispose() { }
 }

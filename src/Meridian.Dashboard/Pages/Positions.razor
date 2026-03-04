@@ -1,0 +1,250 @@
+@page "/positions"
+@using Meridian.Dashboard.Models
+@using Meridian.Dashboard.Services
+@inject SqlPositionService SqlService
+@inject KafkaCommandPublisher CommandPublisher
+@inject ILogger<Positions> Logger
+
+<PageTitle>Positions - Meridian</PageTitle>
+
+<div class="page-header">
+    <h2>Position Management</h2>
+    <button class="btn btn-add" @onclick="ToggleForm">@(showForm ? "Cancel" : "+ Add Position")</button>
+</div>
+
+@if (showForm)
+{
+    <div class="card form-card">
+        <h3>New Position</h3>
+        <div class="position-form">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Underlier</label>
+                    <input class="form-control" @bind="newPosition.Underlier" placeholder="e.g. AAPL, SPY" />
+                </div>
+                <div class="form-group">
+                    <label>Option Type</label>
+                    <select class="form-control" @bind="newPosition.OptionType">
+                        <option value="Call">Call</option>
+                        <option value="Put">Put</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Strike</label>
+                    <input type="number" class="form-control" @bind="newPosition.Strike" step="0.01" />
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Expiry</label>
+                    <input type="date" class="form-control" @bind="newPosition.Expiry" />
+                </div>
+                <div class="form-group">
+                    <label>Quantity (+long / -short)</label>
+                    <input type="number" class="form-control" @bind="newPosition.Quantity" />
+                </div>
+                <div class="form-group">
+                    <label>Entry Price</label>
+                    <input type="number" class="form-control" @bind="newPosition.EntryPrice" step="0.01" />
+                </div>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-primary" @onclick="AddPosition" disabled="@isSubmitting">
+                    @(isSubmitting ? "Adding..." : "Add Position")
+                </button>
+            </div>
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="error-message">@errorMessage</div>
+            }
+            @if (!string.IsNullOrEmpty(successMessage))
+            {
+                <div class="success-message">@successMessage</div>
+            }
+        </div>
+    </div>
+}
+
+<div class="card table-card">
+    <h3>Active Positions (@positions.Count)</h3>
+    @if (positions.Count > 0)
+    {
+        <div class="table-wrapper">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Underlier</th>
+                        <th>Type</th>
+                        <th class="num">Strike</th>
+                        <th>Expiry</th>
+                        <th class="num">Qty</th>
+                        <th class="num">Entry</th>
+                        <th>Style</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var pos in positions)
+                    {
+                        <tr>
+                            <td class="mono">@pos.PositionId</td>
+                            <td>@pos.Instrument.Underlier</td>
+                            <td>
+                                <span class="status-badge @(pos.Instrument.Type == Meridian.Common.Models.OptionType.Call ? "badge-green" : "badge-red")">
+                                    @pos.Instrument.Type
+                                </span>
+                            </td>
+                            <td class="num mono">@pos.Instrument.Strike.ToString("F2")</td>
+                            <td>@pos.Instrument.Expiry.ToString("yyyy-MM-dd")</td>
+                            <td class="num @(pos.Quantity > 0 ? "value-positive" : "value-negative")">@pos.Quantity</td>
+                            <td class="num mono">@pos.EntryPrice.ToString("F2")</td>
+                            <td>@pos.Instrument.Style</td>
+                            <td>
+                                <button class="btn btn-danger-sm" @onclick="() => RemovePosition(pos.PositionId)" disabled="@removingId.Contains(pos.PositionId)">
+                                    Remove
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="empty-state">No active positions. Add one above to get started.</div>
+    }
+</div>
+
+@code {
+    private List<Meridian.Common.Models.Position> positions = new();
+    private CreatePositionRequest newPosition = new();
+    private bool showForm = false;
+    private bool isSubmitting = false;
+    private string? errorMessage;
+    private string? successMessage;
+    private HashSet<string> removingId = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPositions();
+    }
+
+    private async Task LoadPositions()
+    {
+        try
+        {
+            positions = await SqlService.GetOpenPositionsAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load positions from SQL");
+            positions = new();
+        }
+    }
+
+    private void ToggleForm()
+    {
+        showForm = !showForm;
+        errorMessage = null;
+        successMessage = null;
+        if (showForm)
+        {
+            newPosition = new CreatePositionRequest
+            {
+                Expiry = DateTime.UtcNow.AddMonths(1)
+            };
+        }
+    }
+
+    private async Task AddPosition()
+    {
+        errorMessage = null;
+        successMessage = null;
+
+        if (string.IsNullOrWhiteSpace(newPosition.Underlier))
+        {
+            errorMessage = "Underlier is required";
+            return;
+        }
+        if (newPosition.Strike <= 0)
+        {
+            errorMessage = "Strike must be positive";
+            return;
+        }
+        if (newPosition.Quantity == 0)
+        {
+            errorMessage = "Quantity must be non-zero";
+            return;
+        }
+
+        isSubmitting = true;
+        try
+        {
+            var positionId = $"POS-{Guid.NewGuid().ToString("N")[..8].ToUpper()}";
+            var optionType = Enum.Parse<Meridian.Common.Models.OptionType>(newPosition.OptionType, true);
+            var exerciseStyle = Enum.Parse<Meridian.Common.Models.ExerciseStyle>(newPosition.ExerciseStyle, true);
+
+            var position = new Meridian.Common.Models.Position(
+                positionId,
+                new Meridian.Common.Models.Option(
+                    $"{newPosition.Underlier.ToUpper()}-{newPosition.OptionType[0]}-{newPosition.Strike:F0}",
+                    newPosition.Underlier.ToUpper(),
+                    optionType,
+                    newPosition.Strike,
+                    newPosition.Expiry,
+                    exerciseStyle),
+                newPosition.Quantity,
+                newPosition.EntryPrice,
+                DateTime.UtcNow);
+
+            await SqlService.SavePositionAsync(position);
+
+            var command = new Meridian.Common.Models.PositionCommand(
+                Meridian.Common.Models.CommandType.Add, position, DateTime.UtcNow);
+            try { await CommandPublisher.PublishAsync(command); }
+            catch (Exception ex) { Logger.LogWarning(ex, "Failed to publish to Kafka"); }
+
+            successMessage = $"Position {positionId} added successfully";
+            showForm = false;
+            await LoadPositions();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to add position: {ex.Message}";
+            Logger.LogError(ex, "Failed to add position");
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task RemovePosition(string positionId)
+    {
+        removingId.Add(positionId);
+        try
+        {
+            var position = await SqlService.GetPositionAsync(positionId);
+            if (position != null)
+            {
+                await SqlService.ClosePositionAsync(positionId);
+
+                var command = new Meridian.Common.Models.PositionCommand(
+                    Meridian.Common.Models.CommandType.Remove, position, DateTime.UtcNow);
+                try { await CommandPublisher.PublishAsync(command); }
+                catch (Exception ex) { Logger.LogWarning(ex, "Failed to publish remove to Kafka"); }
+            }
+            await LoadPositions();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to remove position {PositionId}", positionId);
+        }
+        finally
+        {
+            removingId.Remove(positionId);
+        }
+    }
+}

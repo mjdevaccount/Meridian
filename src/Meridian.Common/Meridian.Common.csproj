@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Confluent.Kafka" Version="2.*" />
     <PackageReference Include="System.Reactive" Version="6.*" />
     <PackageReference Include="System.Collections.Immutable" Version="8.*" />
   </ItemGroup>

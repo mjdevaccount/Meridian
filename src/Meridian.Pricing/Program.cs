@@ -2,6 +2,7 @@ using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using Meridian.Common.Configuration;
 using Meridian.Common.Health;
+using Meridian.Common.Messaging;
 using Meridian.Common.Models;
 using Meridian.MarketData.Simulation;
 using Meridian.Pricing.Models;
@@ -71,6 +72,9 @@ public class Program
 
         var riskFreeRate = configuration.GetValue<decimal>("Pricing:RiskFreeRate", 0.05m);
         var microBatchMs = configuration.GetValue<int>("Pricing:MicroBatchIntervalMs", 50);
+
+        var sqlConnection = Environment.GetEnvironmentVariable("SQL_CONNECTION")
+            ?? configuration.GetValue<string>("SqlServer:ConnectionString") ?? "";
 
         // -----------------------------------------------------------------
         // Determine data source: Kafka or in-process simulator
@@ -144,8 +148,35 @@ public class Program
         // Build sample portfolio: ~12 option positions across 5 underliers
         // Mix of calls/puts, long/short, various strikes and expiries
         // -----------------------------------------------------------------
+        // Load positions from SQL or seed with sample portfolio
         var now = DateTime.UtcNow;
-        var positions = BuildSamplePortfolio(marketDataConfig.Symbols, now);
+        List<Position> positions;
+
+        if (!string.IsNullOrEmpty(sqlConnection))
+        {
+            try
+            {
+                positions = await LoadPositionsFromSql(sqlConnection);
+                if (positions.Count == 0)
+                {
+                    Log.Information("No positions in database, using sample portfolio");
+                    positions = BuildSamplePortfolio(marketDataConfig.Symbols, now);
+                }
+                else
+                {
+                    Log.Information("Loaded {Count} positions from SQL", positions.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "SQL unavailable, using sample portfolio");
+                positions = BuildSamplePortfolio(marketDataConfig.Symbols, now);
+            }
+        }
+        else
+        {
+            positions = BuildSamplePortfolio(marketDataConfig.Symbols, now);
+        }
 
         Console.WriteLine($"Portfolio: {positions.Count} positions");
         Console.WriteLine(new string('-', 90));
@@ -250,6 +281,40 @@ public class Program
             });
         subscriptions.Add(latencySub);
 
+        // Portfolio command consumer for dynamic position management
+        PortfolioCommandConsumer? commandConsumer = null;
+        IDisposable? commandSub = null;
+        if (!string.IsNullOrEmpty(kafkaBootstrap) && kafkaBootstrap != "localhost:9092")
+        {
+            try
+            {
+                commandConsumer = new PortfolioCommandConsumer(kafkaBootstrap, "portfolio.commands", "meridian-pricing-cmds");
+                commandSub = commandConsumer.Commands.Subscribe(cmd =>
+                {
+                    switch (cmd.Type)
+                    {
+                        case CommandType.Add:
+                            Log.Information("Adding position {PositionId} for {Underlier}", cmd.Position.PositionId, cmd.Position.Instrument.Underlier);
+                            pipeline.AddPosition(cmd.Position);
+                            break;
+                        case CommandType.Remove:
+                            Log.Information("Removing position {PositionId}", cmd.Position.PositionId);
+                            pipeline.RemovePosition(cmd.Position.PositionId);
+                            break;
+                        case CommandType.Update:
+                            pipeline.RemovePosition(cmd.Position.PositionId);
+                            pipeline.AddPosition(cmd.Position);
+                            break;
+                    }
+                });
+                Log.Information("Portfolio command consumer started for Pricing");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to start portfolio command consumer");
+            }
+        }
+
         // -----------------------------------------------------------------
         // Wait for Ctrl+C
         // -----------------------------------------------------------------
@@ -303,6 +368,8 @@ public class Program
         // Clean up
         // -----------------------------------------------------------------
         subscriptions.Dispose();
+        commandSub?.Dispose();
+        commandConsumer?.Dispose();
         pipeline.Dispose();
         dataSource?.Dispose();
         healthServer?.Dispose();
@@ -314,6 +381,31 @@ public class Program
         Log.CloseAndFlush();
         Console.WriteLine();
         Console.WriteLine("=== Meridian Pricing Engine stopped. ===");
+    }
+
+    private static async Task<List<Position>> LoadPositionsFromSql(string connectionString)
+    {
+        using var conn = new Microsoft.Data.SqlClient.SqlConnection(connectionString);
+        await conn.OpenAsync();
+        using var cmd = new Microsoft.Data.SqlClient.SqlCommand("SELECT * FROM Positions WHERE IsOpen = 1", conn);
+        using var reader = await cmd.ExecuteReaderAsync();
+        var positions = new List<Position>();
+        while (await reader.ReadAsync())
+        {
+            positions.Add(new Position(
+                reader.GetString(reader.GetOrdinal("PositionId")),
+                new Option(
+                    reader.GetString(reader.GetOrdinal("Symbol")),
+                    reader.GetString(reader.GetOrdinal("Underlier")),
+                    Enum.Parse<OptionType>(reader.GetString(reader.GetOrdinal("OptionType")), true),
+                    reader.GetDecimal(reader.GetOrdinal("Strike")),
+                    reader.GetDateTime(reader.GetOrdinal("Expiry")),
+                    ExerciseStyle.European),
+                reader.GetInt32(reader.GetOrdinal("Quantity")),
+                reader.GetDecimal(reader.GetOrdinal("EntryPrice")),
+                reader.GetDateTime(reader.GetOrdinal("EntryTime"))));
+        }
+        return positions;
     }
 
     /// <summary>
